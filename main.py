@@ -14,29 +14,21 @@
 
 
 # [START imports]
+
 import endpoints
-from protorpc import message_types
 from protorpc import messages
 from protorpc import remote
+import logging
+from google.cloud import pubsub
+
+##TOPIC = 'xpto-develop-All'
+##SUBSCRIPTION = 'test-k'
+
+
 # [END imports]
 
 
 # [START messages]
-class Greeting(messages.Message):
-    """Greeting that stores a message."""
-    message = messages.StringField(1)
-
-
-class GreetingCollection(messages.Message):
-    """Collection of Greetings."""
-    items = messages.MessageField(Greeting, 1, repeated=True)
-
-
-STORED_GREETINGS = GreetingCollection(items=[
-    Greeting(message='hello world!'),
-    Greeting(message='goodbye world!'),
-])
-
 
 class PullResponse(messages.Message):
     message_data = messages.StringField(1)
@@ -45,16 +37,18 @@ class PullResponse(messages.Message):
     messageid = messages.StringField(4)
     publish_time = messages.StringField(5)
     publishtime = messages.StringField(6)
-    url = messages.StringField(7)
+    topic_name = messages.StringField(7)
+    subscription = messages.StringField(8)
 
 SUBSCRIBER_RESOURCE = endpoints.ResourceContainer(
-    subscriber=messages.StringField(1, required=True))
+    topic_name=messages.StringField(1, required=True),
+    subscription=messages.StringField(2, required=True))
 # [END messages]
 
 
 # [START greeting_api]
 @endpoints.api(name='clientpubsub', version='v1')
-class GreetingApi(remote.Service):
+class PubSubClientApi(remote.Service):
 
     @endpoints.method(
         SUBSCRIBER_RESOURCE,
@@ -64,18 +58,36 @@ class GreetingApi(remote.Service):
     )
     def get_pull(self, request):
 
+        pubsub_client = pubsub.Client()
+        topic = pubsub_client.topic(request.topic_name)
+        subscription = topic.subscription(request.subscription)
+
+        # Change return_immediately=False to block until messages are
+        # received.
+        results = subscription.pull(return_immediately=True)
+
+        logging.info('Received {} messages.'.format(len(results)))
+        logging.info(results[:])
+
+        # for ack_id, message in results:
+        #     logging.info('* {}: {}, {}'.format(
+        #         message.message_id, message.data, message.attributes))
+
+        ack_id, message = results[0]
+        logging.info(message.__dict__)
         # request.id is used to access the URL parameter.
-        return PullResponse(message_data='message_data',
-                            message_attribute_kind='message_attribute_kind',
-                            message_id='message_id',
-                            messageid='messageid',
+        return PullResponse(message_data=str(message.data),
+                            message_attribute_kind=str(message.attributes),
+                            message_id=message.message_id,
+                            messageid= message.message_id,
                             publish_time='publish_time',
                             publishtime='publishtime',
-                            url=request.subscriber)
+                            topic_name=request.topic_name,
+                            subscription=request.subscription)
 
-    # [END multiply]
+
 
 
 # [START api_server]
-api = endpoints.api_server([GreetingApi])
+api = endpoints.api_server([PubSubClientApi])
 # [END api_server]
